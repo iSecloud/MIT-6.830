@@ -32,6 +32,9 @@ public class BufferPool {
     other classes. BufferPool should use the numPages argument to the
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
+    
+    private int numPages;
+    private ConcurrentHashMap<Integer, Page> pagesMap;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -39,7 +42,8 @@ public class BufferPool {
      * @param numPages maximum number of pages in this buffer pool.
      */
     public BufferPool(int numPages) {
-        // some code goes here
+        this.numPages = numPages;
+        pagesMap = new ConcurrentHashMap<Integer, Page>(numPages);
     }
     
     public static int getPageSize() {
@@ -66,15 +70,22 @@ public class BufferPool {
      * be added to the buffer pool and returned.  If there is insufficient
      * space in the buffer pool, a page should be evicted and the new page
      * should be added in its place.
-     *
+     * 
      * @param tid the ID of the transaction requesting the page
-     * @param pid the ID of the requested page
+     * @param pid the ID of the requested page 
      * @param perm the requested permissions on the page
      */
-    public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
+    public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-        // some code goes here
-        return null;
+        // TODO 限定添加缓存页面数量为numPages
+    	Integer pageHashCode = pid.hashCode();
+    	if (!pagesMap.containsKey(pageHashCode)) {
+        	// 实例化一个Dbfile: 从Catalog得到（通过全局Dtabase得到Catalog实例对象）
+    		DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
+    		Page page = dbFile.readPage(pid);
+    		pagesMap.put(pid.hashCode(), page);
+        }
+        return pagesMap.get(pid.hashCode());
     }
 
     /**

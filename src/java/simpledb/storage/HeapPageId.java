@@ -1,5 +1,7 @@
 package simpledb.storage;
 
+import java.util.Objects;
+
 /** Unique identifier for HeapPage objects. */
 public class HeapPageId implements PageId {
 
@@ -8,16 +10,20 @@ public class HeapPageId implements PageId {
      * specific table.
      *
      * @param tableId The table that is being referenced
-     * @param pgNo The page number in that table.
+     * @param pageNumber The page number in that table.
      */
-    public HeapPageId(int tableId, int pgNo) {
-        // some code goes here
+	
+	private int tableId;
+	private int pageNumber;
+	
+    public HeapPageId(int tableId, int pageNnmber) {
+        this.tableId = tableId;
+        this.pageNumber = pageNnmber;
     }
 
     /** @return the table associated with this PageId */
     public int getTableId() {
-        // some code goes here
-        return 0;
+        return tableId;
     }
 
     /**
@@ -25,8 +31,7 @@ public class HeapPageId implements PageId {
      *   this PageId
      */
     public int getPageNumber() {
-        // some code goes here
-        return 0;
+        return pageNumber;
     }
 
     /**
@@ -36,8 +41,7 @@ public class HeapPageId implements PageId {
      * @see BufferPool
      */
     public int hashCode() {
-        // some code goes here
-        throw new UnsupportedOperationException("implement this");
+        return Objects.hash(tableId, pageNumber);
     }
 
     /**
@@ -47,9 +51,15 @@ public class HeapPageId implements PageId {
      * @return true if the objects are equal (e.g., page numbers and table
      *   ids are the same)
      */
-    public boolean equals(Object o) {
-        // some code goes here
-        return false;
+    public boolean equals(Object obj) {
+    	if(!(obj instanceof PageId)) {
+    		return false;
+    	}
+    	PageId headPageId = (PageId)obj;
+    	if (headPageId.getPageNumber() != pageNumber || headPageId.getTableId() != tableId) {
+    		return false;
+    	}
+    	return true;
     }
 
     /**

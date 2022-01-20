@@ -36,15 +36,21 @@ public class TupleDesc implements Serializable {
             return fieldName + "(" + fieldType + ")";
         }
     }
+    
+    /**
+     * 字段类型对象: (type, name)
+     * 定义字段类型对象数组((type1, name1), (type2, name2), ....)
+     */
+    private TDItem[] tdItems;
 
     /**
      * @return
      *        An iterator which iterates over all the field TDItems
      *        that are included in this TupleDesc
      * */
-    public Iterator<TDItem> iterator() {
-        // some code goes here
-        return null;
+	public Iterator<TDItem> iterator() {
+        // 返回tdItems数组的迭代器
+        return (Iterator<TDItem>)List.of(tdItems).iterator();
     }
 
     private static final long serialVersionUID = 1L;
@@ -61,7 +67,11 @@ public class TupleDesc implements Serializable {
      *            be null.
      */
     public TupleDesc(Type[] typeAr, String[] fieldAr) {
-        // some code goes here
+        // 创建字段类型对象数组
+    	tdItems = new TDItem[typeAr.length];
+    	for (int tdIndex = 0; tdIndex < typeAr.length; tdIndex ++) {
+    		tdItems[tdIndex] = new TDItem(typeAr[tdIndex], fieldAr[tdIndex]);
+    	}
     }
 
     /**
@@ -73,15 +83,22 @@ public class TupleDesc implements Serializable {
      *            TupleDesc. It must contain at least one entry.
      */
     public TupleDesc(Type[] typeAr) {
-        // some code goes here
-    }
+    	// 创建字段类型对象数组（匿名字段，名字用""代替）
+    	tdItems = new TDItem[typeAr.length];
+    	for (int tdIndex = 0; tdIndex < typeAr.length; tdIndex ++) {
+    		tdItems[tdIndex] = new TDItem(typeAr[tdIndex], "");
+    	}
+    }	
+    
+    public TupleDesc(TDItem[] tdItems) {
+		this.tdItems = tdItems;
+	}
 
     /**
      * @return the number of fields in this TupleDesc
      */
     public int numFields() {
-        // some code goes here
-        return 0;
+        return tdItems.length;
     }
 
     /**
@@ -93,9 +110,12 @@ public class TupleDesc implements Serializable {
      * @throws NoSuchElementException
      *             if i is not a valid field reference.
      */
-    public String getFieldName(int i) throws NoSuchElementException {
-        // some code goes here
-        return null;
+    public String getFieldName(int tdIndex) throws NoSuchElementException {
+        try {
+        	return tdItems[tdIndex].fieldName;
+        } catch (ArrayIndexOutOfBoundsException e) {
+			throw new NoSuchElementException(e);
+		}
     }
 
     /**
@@ -108,9 +128,12 @@ public class TupleDesc implements Serializable {
      * @throws NoSuchElementException
      *             if i is not a valid field reference.
      */
-    public Type getFieldType(int i) throws NoSuchElementException {
-        // some code goes here
-        return null;
+    public Type getFieldType(int tdIndex) throws NoSuchElementException {
+    	try {
+        	return tdItems[tdIndex].fieldType;
+        } catch (ArrayIndexOutOfBoundsException e) {
+			throw new NoSuchElementException(e);
+		}
     }
 
     /**
@@ -123,8 +146,12 @@ public class TupleDesc implements Serializable {
      *             if no field with a matching name is found.
      */
     public int fieldNameToIndex(String name) throws NoSuchElementException {
-        // some code goes here
-        return 0;
+        for (int tdIndex = 0; tdIndex < tdItems.length; tdIndex ++) {
+        	if (tdItems[tdIndex].fieldName.equals(name)) {
+        		return tdIndex;
+        	}
+        }
+        throw new NoSuchElementException("The index corresponding to the field name: " + name + "could not be found");
     }
 
     /**
@@ -132,8 +159,12 @@ public class TupleDesc implements Serializable {
      *         Note that tuples from a given TupleDesc are of a fixed size.
      */
     public int getSize() {
-        // some code goes here
-        return 0;
+        // 返回字段类型对象数组的总大小
+        int tdItemsSize = 0;
+        for (TDItem tdItem: tdItems) {
+        	tdItemsSize += tdItem.fieldType.getLen();
+        }
+        return tdItemsSize;
     }
 
     /**
@@ -147,11 +178,21 @@ public class TupleDesc implements Serializable {
      * @return the new TupleDesc
      */
     public static TupleDesc merge(TupleDesc td1, TupleDesc td2) {
-        // some code goes here
-        return null;
+        // 合并两个数组对象组为一个字段类型对象数组
+    	int tdLength = td1.numFields() + td2.numFields();
+    	int td1Length = td1.numFields();
+    	TDItem[] newTDItems = new TDItem[tdLength];
+    	for (int tdIndex = 0; tdIndex < tdLength; tdIndex ++) {
+    		if (tdIndex < td1.numFields()) {
+    			newTDItems[tdIndex] = new TDItem(td1.getFieldType(tdIndex), td1.getFieldName(tdIndex));
+    		} else {
+    			newTDItems[tdIndex] = new TDItem(td2.getFieldType(tdIndex - td1Length), td2.getFieldName(tdIndex - td1Length));
+    		}
+    	}
+    	return new TupleDesc(newTDItems);
     }
 
-    /**
+	/**
      * Compares the specified object with this TupleDesc for equality. Two
      * TupleDescs are considered equal if they have the same number of items
      * and if the i-th type in this TupleDesc is equal to the i-th type in o
@@ -162,9 +203,23 @@ public class TupleDesc implements Serializable {
      * @return true if the object is equal to this TupleDesc.
      */
 
-    public boolean equals(Object o) {
-        // some code goes here
-        return false;
+    public boolean equals(Object obj) {
+        if (!(obj instanceof TupleDesc)) {
+        	return false;
+        }
+        TupleDesc tupleDescIns = (TupleDesc) obj;
+        if (tupleDescIns.numFields() != this.numFields()) {
+        	return false;
+        }
+        for (int tdIndex = 0; tdIndex < tupleDescIns.numFields(); tdIndex ++) {
+        	if (!(tupleDescIns.getFieldName(tdIndex).equals(this.getFieldName(tdIndex)))) {
+        		return false;
+        	}
+        	if (tupleDescIns.getFieldType(tdIndex) != this.getFieldType(tdIndex)) {
+        		return false;
+        	}
+        }
+        return true;
     }
 
     public int hashCode() {
@@ -181,7 +236,13 @@ public class TupleDesc implements Serializable {
      * @return String describing this descriptor.
      */
     public String toString() {
-        // some code goes here
-        return "";
+        String tupleDescString = "";
+        for (int tdIndex = 0; tdIndex < this.numFields(); tdIndex ++) {
+        	tupleDescString += this.getFieldType(tdIndex) + "(" + this.getFieldName(tdIndex) + ")";
+        	if (tdIndex != this.numFields() - 1) {
+        		tupleDescString += ", ";
+        	}
+        }
+        return tupleDescString;
     }
 }
