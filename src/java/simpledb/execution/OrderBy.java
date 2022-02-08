@@ -28,6 +28,7 @@ public class OrderBy extends Operator {
      * @param orderbyField
      *            the field to which the sort is applied.
      * @param asc
+     * 
      *            true if the sort order is ascending.
      * @param child
      *            the tuples to sort.
@@ -42,7 +43,7 @@ public class OrderBy extends Operator {
     
     public boolean isASC()
     {
-	return this.asc;
+    	return this.asc;
     }
     
     public int getOrderByField()
@@ -52,7 +53,7 @@ public class OrderBy extends Operator {
     
     public String getOrderFieldName()
     {
-	return this.orderByFieldName;
+    	return this.orderByFieldName;
     }
     
     public TupleDesc getTupleDesc() {

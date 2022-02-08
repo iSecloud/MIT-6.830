@@ -96,7 +96,7 @@ public class Tuple implements Serializable {
      */
     public String toString() {
         String tupleString = "";
-    	for (int tdIndex = 0; tdIndex <= tupleDesc.numFields(); tdIndex ++) {
+    	for (int tdIndex = 0; tdIndex < tupleDesc.numFields(); tdIndex ++) {
         	tupleString += fields[tdIndex].toString();
         	if (tdIndex != tupleDesc.numFields() - 1) {
         		tupleString += "\t";

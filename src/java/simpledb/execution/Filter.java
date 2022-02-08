@@ -7,6 +7,8 @@ import simpledb.storage.TupleDesc;
 
 import java.util.*;
 
+import org.junit.runners.Parameterized.UseParametersRunnerFactory;
+
 /**
  * Filter is an operator that implements a relational select.
  */
@@ -23,31 +25,55 @@ public class Filter extends Operator {
      * @param child
      *            The child operator
      */
+    
+    /**
+     * predicate: 过滤条件
+     * child: 传入的迭代器，用于获取tuple
+     * td: 表描述
+     * childTupsList: 过滤后的tupleList
+     * iterator: tupleList迭代器
+     */
+    private Predicate predicate;
+    private OpIterator child;
+    private TupleDesc td;
+    private List<Tuple> childTupsList = new ArrayList<Tuple>();
+    private Iterator<Tuple> iterator;
+    
     public Filter(Predicate p, OpIterator child) {
-        // some code goes here
+    	this.predicate = p;
+    	this.child = child;
+    	this.td = child.getTupleDesc();
     }
 
     public Predicate getPredicate() {
-        // some code goes here
-        return null;
+        return this.predicate;
     }
 
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        return null;
+        return this.td;
     }
 
     public void open() throws DbException, NoSuchElementException,
             TransactionAbortedException {
-        // some code goes here
+        child.open();
+        while (child.hasNext()) {
+        	Tuple tup = child.next();
+        	if (predicate.filter(tup)) {
+        		childTupsList.add(tup);
+        	}
+        }
+        iterator = childTupsList.iterator();
+        super.open();
     }
 
     public void close() {
-        // some code goes here
+        super.close();
+        child.close();
+        iterator = null;
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
-        // some code goes here
+        iterator = childTupsList.iterator();
     }
 
     /**
@@ -61,19 +87,20 @@ public class Filter extends Operator {
      */
     protected Tuple fetchNext() throws NoSuchElementException,
             TransactionAbortedException, DbException {
-        // some code goes here
-        return null;
+    	if (iterator != null && iterator.hasNext()) {
+            return iterator.next();
+        } else
+            return null;
     }
 
     @Override
     public OpIterator[] getChildren() {
-        // some code goes here
-        return null;
+    	return new OpIterator[] { this.child };
     }
 
     @Override
     public void setChildren(OpIterator[] children) {
-        // some code goes here
+    	this.child = children[0];
     }
 
 }

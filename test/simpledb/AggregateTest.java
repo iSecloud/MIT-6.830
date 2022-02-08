@@ -95,7 +95,7 @@ public class AggregateTest extends SimpleDbTestBase {
     // Int, Int TupleDesc
     Aggregate op = new Aggregate(scan1, 0, 0,
             Aggregator.Op.MIN);
-    TupleDesc expected = Utility.getTupleDesc(2);
+    TupleDesc expected = new TupleDesc(new Type[] {Type.INT_TYPE, Type.INT_TYPE}, new String[] {"", "aggr(min)()"});
     TupleDesc actual = op.getTupleDesc();
     assertEquals(expected, actual);
 
@@ -103,7 +103,7 @@ public class AggregateTest extends SimpleDbTestBase {
     // We group by the String field, returning <String, Count> tuples.
     op = new Aggregate(scan2, 0, 1,
             Aggregator.Op.COUNT);
-    expected = new TupleDesc(new Type[]{ Type.STRING_TYPE, Type.INT_TYPE });
+    expected = new TupleDesc(new Type[]{ Type.STRING_TYPE, Type.INT_TYPE }, new String[] {"", "aggr(count)()"});
     actual = op.getTupleDesc();
     assertEquals(expected, actual);
   }

@@ -10,6 +10,7 @@ import simpledb.common.Database;
 import simpledb.common.DbException;
 import simpledb.execution.Insert;
 import simpledb.execution.SeqScan;
+import simpledb.storage.DbFileIterator;
 import simpledb.storage.HeapFile;
 import simpledb.storage.IntField;
 import simpledb.storage.Tuple;
@@ -34,7 +35,7 @@ public class InsertTest extends SimpleDbTestBase {
         SeqScan ss = new SeqScan(tid, source.getId(), "");
         Insert insOp = new Insert(tid, ss, destination.getId());
 
-//        Query q = new Query(insOp, tid);
+        // Query q = new Query(insOp, tid);
         insOp.open();
         boolean hasResult = false;
         while (insOp.hasNext()) {

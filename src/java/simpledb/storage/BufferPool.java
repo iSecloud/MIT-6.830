@@ -8,7 +8,9 @@ import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
 import java.io.*;
-
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -83,6 +85,9 @@ public class BufferPool {
         	// 实例化一个Dbfile: 从Catalog得到（通过全局Dtabase得到Catalog实例对象）
     		DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
     		Page page = dbFile.readPage(pid);
+    		if (pagesMap.size() > numPages) {
+    			evictPage();
+    		}
     		pagesMap.put(pid.hashCode(), page);
         }
         return pagesMap.get(pid.hashCode());
@@ -146,10 +151,15 @@ public class BufferPool {
      * @param tableId the table to add the tuple to
      * @param t the tuple to add
      */
-    public void insertTuple(TransactionId tid, int tableId, Tuple t)
+    public void insertTuple(TransactionId tid, int tableId, Tuple tup)
         throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+        HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
+        List<Page> pageList = heapFile.insertTuple(tid, tup);
+        for (Page page: pageList) {
+        	HeapPage heapPage = (HeapPage) page;
+        	heapPage.markDirty(true, tid);
+        	pagesMap.put(heapPage.getId().hashCode(), heapPage);
+        }
     }
 
     /**
@@ -165,10 +175,15 @@ public class BufferPool {
      * @param tid the transaction deleting the tuple.
      * @param t the tuple to delete
      */
-    public  void deleteTuple(TransactionId tid, Tuple t)
+    public  void deleteTuple(TransactionId tid, Tuple tup)
         throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+    	 HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tup.getRecordId().getPageId().getTableId());
+         List<Page> pageList = heapFile.deleteTuple(tid, tup);
+         for (Page page: pageList) {
+         	HeapPage heapPage = (HeapPage) page;
+         	heapPage.markDirty(true, tid);
+         	pagesMap.put(heapPage.getId().hashCode(), heapPage);
+         }
     }
 
     /**
@@ -177,9 +192,12 @@ public class BufferPool {
      *     break simpledb if running in NO STEAL mode.
      */
     public synchronized void flushAllPages() throws IOException {
-        // some code goes here
-        // not necessary for lab1
-
+        for (Map.Entry<Integer, Page> entry: pagesMap.entrySet()) {
+        	HeapPage page = (HeapPage) entry.getValue();
+        	if (page.isDirty() != null) {
+        		flushPage(page.getId());
+        	}
+        }
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -191,17 +209,22 @@ public class BufferPool {
         are removed from the cache so they can be reused safely
     */
     public synchronized void discardPage(PageId pid) {
-        // some code goes here
-        // not necessary for lab1
+        pagesMap.remove(pid.hashCode());
     }
 
     /**
      * Flushes a certain page to disk
      * @param pid an ID indicating the page to flush
      */
-    private synchronized  void flushPage(PageId pid) throws IOException {
-        // some code goes here
-        // not necessary for lab1
+    private synchronized void flushPage(PageId pid) throws IOException {
+        Page page = pagesMap.get(pid.hashCode());
+        TransactionId tid = page.isDirty(); // 获取脏页的事务，如果为null说明不是脏页
+        if (tid != null) {
+        	// TODO 日志记录，便于回滚 Database.getLogFile().logWrite
+        	HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(pid.getTableId());
+        	heapFile.writePage(page);
+        	page.markDirty(false, null);
+        }
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -215,9 +238,15 @@ public class BufferPool {
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
-    private synchronized  void evictPage() throws DbException {
-        // some code goes here
-        // not necessary for lab1
+    private synchronized void evictPage() throws DbException {
+        Iterator<Map.Entry<Integer, Page>> mapIterator = pagesMap.entrySet().iterator();
+        Page page = mapIterator.next().getValue();
+        try {
+			flushPage(page.getId());
+			discardPage(page.getId());
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
     }
 
 }

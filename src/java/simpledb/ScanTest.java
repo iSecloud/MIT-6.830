@@ -30,9 +30,10 @@ public class ScanTest {
         try {
             // and run it
         	scan.open();
+        	int count = 0;
             while (scan.hasNext()) {
                 Tuple tup = scan.next();
-                System.out.println("1");
+                System.out.printf("%d: %s\n", ++ count, tup);
             }
             scan.close();
             Database.getBufferPool().transactionComplete(tid);
@@ -40,5 +41,4 @@ public class ScanTest {
             System.out.println ("Exception : " + e);
         }
 	}
-
 }

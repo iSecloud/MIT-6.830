@@ -12,6 +12,8 @@ import simpledb.transaction.TransactionId;
 
 import java.io.IOException;
 
+import javax.swing.text.StyledEditorKit.BoldAction;
+
 /**
  * The delete operator. Delete reads tuples from its child operator and removes
  * them from the table they belong to.
@@ -29,25 +31,37 @@ public class Delete extends Operator {
      * @param child
      *            The child operator from which to read tuples for deletion
      */
-    public Delete(TransactionId t, OpIterator child) {
-        // some code goes here
+    
+    private TransactionId tid;
+    private OpIterator child;
+    private TupleDesc td;
+    private boolean isCalled;
+    
+    public Delete(TransactionId tid, OpIterator child) {
+       this.tid = tid;
+       this.child = child;
+       this.td = new TupleDesc(new Type[] {Type.INT_TYPE});
+       this.isCalled = false;
     }
 
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        return null;
+        return td;
     }
 
     public void open() throws DbException, TransactionAbortedException {
-        // some code goes here
+    	isCalled = false;
+        child.open();
+        super.open();
     }
 
     public void close() {
-        // some code goes here
+        super.close();
+        child.close();
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
-        // some code goes here
+    	isCalled = false;
+        child.rewind();
     }
 
     /**
@@ -60,8 +74,24 @@ public class Delete extends Operator {
      * @see BufferPool#deleteTuple
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
-        // some code goes here
-        return null;
+        int deleteCount = 0;
+    	if (isCalled == true) {
+        	return null;
+        }
+    	isCalled = true;
+    	while(child.hasNext()) {
+    		Tuple tuple = child.next();
+        	try {
+    			Database.getBufferPool().deleteTuple(tid, tuple);
+    			deleteCount += 1;
+    		} catch (DbException | IOException | TransactionAbortedException e) {
+    			// TODO ºöÂÔÉ¾³ýÊ§°ÜµÄorÖ±½Ó±¨´í£¿
+    			continue;
+    		}
+    	}
+    	Tuple resulTuple = new Tuple(td);
+    	resulTuple.setField(0, new IntField(deleteCount));
+    	return resulTuple;
     }
 
     @Override

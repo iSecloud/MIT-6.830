@@ -1,5 +1,7 @@
 package simpledb.execution;
 
+import simpledb.storage.Field;
+import simpledb.storage.IntField;
 import simpledb.storage.Tuple;
 import simpledb.storage.TupleIterator;
 
@@ -11,6 +13,7 @@ import java.io.Serializable;
  */
 public interface Aggregator extends Serializable {
     int NO_GROUPING = -1;
+    static IntField NO_GROUP_FIELD = new IntField(NO_GROUPING);
 
     /**
      * SUM_COUNT and SC_AVG will
@@ -50,8 +53,7 @@ public interface Aggregator extends Serializable {
             return values()[i];
         }
         
-        public String toString()
-        {
+        public String toString() {
         	if (this==MIN)
         		return "min";
         	if (this==MAX)

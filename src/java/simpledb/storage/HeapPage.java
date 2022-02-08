@@ -7,6 +7,9 @@ import simpledb.common.Catalog;
 import simpledb.transaction.TransactionId;
 
 import java.util.*;
+
+import javax.swing.ToolTipManager;
+
 import java.io.*;
 
 /**
@@ -27,6 +30,13 @@ public class HeapPage implements Page {
 
     byte[] oldData;
     private final Byte oldDataLock= (byte) 0;
+    
+    /**
+     * dirtyId: 标记脏数据的事务
+     * isDirty: 是否是脏页
+     */
+    private TransactionId dirtyTid;
+    private boolean isDirty; 
 
     /**
      * Create a HeapPage from a set of bytes of data read from disk.
@@ -108,7 +118,7 @@ public class HeapPage implements Page {
     public void setBeforeImage() {
         synchronized(oldDataLock)
         {
-        oldData = getPageData().clone();
+        	oldData = getPageData().clone();
         }
     }
 
@@ -246,9 +256,16 @@ public class HeapPage implements Page {
      *         already empty.
      * @param t The tuple to delete
      */
-    public void deleteTuple(Tuple t) throws DbException {
-        // some code goes here
-        // not necessary for lab1
+    public void deleteTuple(Tuple tup) throws DbException {
+    	if (!tup.getRecordId().getPageId().equals(this.pageId)) {
+    		throw new DbException("该元组" + tup.toString() + "不存在与该页面中:" + this.pageId.toString());
+    	}
+        int tIndex = tup.getRecordId().getTupleNumber();
+        if (!isSlotUsed(tIndex)) {
+        	throw new DbException("该元组" + tup.toString() + "已经被删除了");
+        }
+        markSlotUsed(tIndex, false);
+        tuples[tIndex] = null;
     }
 
     /**
@@ -258,27 +275,37 @@ public class HeapPage implements Page {
      *         is mismatch.
      * @param t The tuple to add.
      */
-    public void insertTuple(Tuple t) throws DbException {
-        // some code goes here
-        // not necessary for lab1
-    }
+    public void insertTuple(Tuple tup) throws DbException {
+        if (!tup.getTupleDesc().equals(this.tupleDesc)) {
+        	throw new DbException("元组属性不匹配，无法插入");
+        }
+        if (getNumEmptySlots() == 0) {
+        	throw new DbException("该page没有额外空间，无法插入");
+        }
+        for (int slot = 0; slot < numSlots; slot += 1) {
+        	if (!isSlotUsed(slot)) {
+        		tup.setRecordId(new RecordId(pageId, slot));
+        		markSlotUsed(slot, true);
+        		tuples[slot] = tup;
+        		break;
+        	}
+        }
+    }	
 
     /**
      * Marks this page as dirty/not dirty and record that transaction
      * that did the dirtying
      */
     public void markDirty(boolean dirty, TransactionId tid) {
-        // some code goes here
-    	// not necessary for lab1
+        this.dirtyTid = tid;
+        this.isDirty = dirty;
     }
 
     /**
      * Returns the tid of the transaction that last dirtied this page, or null if the page is not dirty
      */
     public TransactionId isDirty() {
-        // some code goes here
-    	// Not necessary for lab1
-        return null;      
+        return isDirty ? dirtyTid : null; 
     }
 
     /**
@@ -305,9 +332,12 @@ public class HeapPage implements Page {
     /**
      * Abstraction to fill or clear a slot on this page.
      */
-    private void markSlotUsed(int i, boolean value) {
-        // some code goes here
-        // not necessary for lab1
+    private void markSlotUsed(int tIndex, boolean value) {
+        if (isSlotUsed(tIndex) == value) {
+        	return;
+        }
+        byte byteVal = (byte) (1 << (tIndex % 8));
+        header[tIndex / 8] = (byte) (byteVal ^ header[tIndex / 8]);
     }
 
     /**
