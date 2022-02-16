@@ -1,6 +1,9 @@
 package simpledb.optimizer;
 
+import javax.management.loading.PrivateClassLoader;
+
 import simpledb.execution.Predicate;
+import simpledb.execution.Predicate.Op;
 
 /** A class to represent a fixed-width histogram over a single integer-based field.
  */
@@ -22,8 +25,19 @@ public class IntHistogram {
      * @param min The minimum integer value that will ever be passed to this class for histogramming
      * @param max The maximum integer value that will ever be passed to this class for histogramming
      */
+	
+	private int[] buckets;
+	private int min;
+	private int max;
+	private int ntups;
+	private double width;
+	
     public IntHistogram(int buckets, int min, int max) {
-    	// some code goes here
+    	this.buckets = new int[buckets];
+    	this.min = min;
+    	this.max = max;
+    	this.ntups = 0;
+    	this.width = 1.0 * (max - min + 1) / buckets;
     }
 
     /**
@@ -31,23 +45,56 @@ public class IntHistogram {
      * @param v Value to add to the histogram
      */
     public void addValue(int v) {
-    	// some code goes here
+    	if (v < min || v > max) {
+    		return;
+    	}
+    	ntups += 1;
+    	buckets[(int) ((v - min) / width)] += 1;
     }
 
     /**
      * Estimate the selectivity of a particular predicate and operand on this table.
      * 
-     * For example, if "op" is "GREATER_THAN" and "v" is 5, 
+     * For example, if "op" is "GREATER_THAN" and "const" is 5, 
      * return your estimate of the fraction of elements that are greater than 5.
      * 
      * @param op Operator
-     * @param v Value
+     * @param const Value
      * @return Predicted selectivity of this particular operator and value
      */
-    public double estimateSelectivity(Predicate.Op op, int v) {
-
-    	// some code goes here
-        return -1.0;
+    public double estimateSelectivity(Predicate.Op op, int val) {
+    	if (op.equals(Predicate.Op.EQUALS)) {
+    		// if (val > max || val < min) return 0.0;
+    		// return 1.0 * buckets[(int) ((val - min) / width)] / (width * ntups);
+    		return estimateSelectivity(Predicate.Op.GREATER_THAN_OR_EQ, val) - estimateSelectivity(Predicate.Op.GREATER_THAN, val);
+    	}
+    	else if (op.equals(Predicate.Op.GREATER_THAN)) {
+    		if (val < min) return 1.0;
+    		if (val >= max) return 0.0;
+    		int index = (int) ((val - min) / width);
+    		// double rate = ((index + 1) * width - val) * estimateSelectivity(op.EQUALS, val);
+    		double rate = ((index + 1) * width - val) * 1.0 * buckets[(int) ((val - min) / width)] / (width * ntups);
+    		int sum = 0;
+    		for (int i = index + 1; i < buckets.length; i += 1) {
+    			sum += buckets[i];
+    		}
+    		rate += (1.0 * sum / ntups);
+    		return rate;
+    	}
+    	else if (op.equals(Predicate.Op.GREATER_THAN_OR_EQ)) {
+    		// return estimateSelectivity(Predicate.Op.GREATER_THAN, val) + estimateSelectivity(Predicate.Op.EQUALS, val);
+    		return estimateSelectivity(Predicate.Op.GREATER_THAN, val - 1);
+    	}
+    	else if (op.equals(Predicate.Op.LESS_THAN_OR_EQ)) {
+    		return 1.0 - estimateSelectivity(Predicate.Op.GREATER_THAN, val);
+    	}
+    	else if (op.equals(Predicate.Op.LESS_THAN)) {
+    		return 1.0 - estimateSelectivity(Predicate.Op.GREATER_THAN_OR_EQ, val);
+    	}
+    	else if (op.equals(Predicate.Op.NOT_EQUALS)) {
+    		return 1.0 - estimateSelectivity(Predicate.Op.EQUALS, val);
+    	}
+    	return 0.0;
     }
     
     /**
@@ -60,15 +107,13 @@ public class IntHistogram {
      * */
     public double avgSelectivity()
     {
-        // some code goes here
-        return 1.0;
+        return 1.0 / (max - min + 1);
     }
     
     /**
      * @return A string describing this histogram, for debugging purposes
      */
     public String toString() {
-        // some code goes here
-        return null;
+        return "这个直方图有: " + ntups + "个元素，最大值为: " + max + "，最小值为: " + min + "，被分割为了" + buckets.length + "份，宽度为" + width;
     }
 }

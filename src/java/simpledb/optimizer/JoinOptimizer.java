@@ -130,7 +130,9 @@ public class JoinOptimizer {
             // HINT: You may need to use the variable "j" if you implemented
             // a join algorithm that's more complicated than a basic
             // nested-loops join.
-            return -1.0;
+        	// 用这个公式即可: joincost(t1 join t2) = scancost(t1) + ntups(t1) x scancost(t2) //IO cost
+            // + ntups(t1) x ntups(t2)  //CPU cost
+            return cost1 + card1 * cost2 + card1 * card2;
         }
     }
 
@@ -175,7 +177,20 @@ public class JoinOptimizer {
                                                    boolean t2pkey, Map<String, TableStats> stats,
                                                    Map<String, Integer> tableAliasToId) {
         int card = 1;
-        // some code goes here
+        // 参考2.2.4 Join Cardinality
+        if (joinOp.equals(Predicate.Op.EQUALS)) {
+        	if (t1pkey) {
+        		card = card2;
+        	}
+        	else if (t2pkey) {
+        		card = card1;
+        	}
+        	else {
+        		card = Math.max(card1, card2);
+        	}
+        } else {
+        	card = (int) (0.3 * card1 * card2);
+        }
         return card <= 0 ? 1 : card;
     }
 
@@ -210,6 +225,31 @@ public class JoinOptimizer {
         return els;
 
     }
+    
+    public <T> Set<Set<T>> getSubsets(List<T> eleList, int size) {
+    	int[] tag = new int[eleList.size()];
+    	Set<Set<T>> els = new HashSet<Set<T>>();
+    	getSubsetByDfs(els, tag, eleList, size, 0, 0);
+    	return els;
+    }
+    
+    public <T> void getSubsetByDfs(Set<Set<T>> els, int[] tag, List<T> eleList, int size, int enumPos, int enumCnt) {
+    	if (enumCnt == size) {
+    		Set<T> subSet = new HashSet<T>();
+    		for (int tagIndex = 0; tagIndex < eleList.size(); tagIndex += 1) {
+    			if (tag[tagIndex] == 1) {
+    				subSet.add(eleList.get(tagIndex));
+    			}
+    		}
+    		els.add(subSet);
+    		return;
+    	}
+    	for (int pos = enumPos; pos < eleList.size(); pos += 1) {
+    		tag[pos] = 1;
+    		getSubsetByDfs(els, tag, eleList, size, pos + 1, enumCnt + 1);
+    		tag[pos] = 0;
+    	}
+    }
 
     /**
      * Compute a logical, reasonably efficient join on the specified tables. See
@@ -238,7 +278,24 @@ public class JoinOptimizer {
 
         // some code goes here
         //Replace the following
-        return joins;
+    	PlanCache pc = new PlanCache();
+    	for (int len = 1; len <= joins.size(); len += 1) {
+    		Set<Set<LogicalJoinNode>> subSets = getSubsets(joins, len);
+    		for (Set<LogicalJoinNode> subSet: subSets) {
+    			double bestCostSoFar = java.lang.Double.MAX_VALUE;
+    			for (LogicalJoinNode node: subSet) {
+    				CostCard costcard = computeCostAndCardOfSubplan(stats, filterSelectivities, node, subSet, bestCostSoFar, pc);
+    				if (costcard != null) {
+    					bestCostSoFar = costcard.cost;
+    					pc.addPlan(subSet, costcard.cost, costcard.card, costcard.plan);
+    				}
+    			}
+    		}
+    	}
+    	if (explain) {
+    		printJoins(joins, pc, stats, filterSelectivities);
+    	}
+        return pc.getOrder(new HashSet<LogicalJoinNode>(joins));
     }
 
     // ===================== Private Methods =================================
