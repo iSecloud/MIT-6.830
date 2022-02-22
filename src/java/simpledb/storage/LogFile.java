@@ -292,7 +292,7 @@ public class LogFile {
         @param tid The transaction that is beginning
 
     */
-    public synchronized  void logXactionBegin(TransactionId tid)
+    public synchronized void logXactionBegin(TransactionId tid)
         throws IOException {
         Debug.log("BEGIN");
         if(tidToFirstLogRecord.get(tid.getId()) != null){

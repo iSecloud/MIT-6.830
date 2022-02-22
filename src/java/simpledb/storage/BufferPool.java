@@ -4,6 +4,9 @@ import simpledb.common.Database;
 import simpledb.common.Permissions;
 import simpledb.common.DbException;
 import simpledb.common.DeadlockException;
+import simpledb.transaction.DeadlockManager;
+import simpledb.transaction.LockManager;
+import simpledb.transaction.RWLock;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
@@ -37,6 +40,7 @@ public class BufferPool {
     
     private int numPages;
     private ConcurrentHashMap<Integer, Page> pagesMap;
+    private LockManager lockManager;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -46,6 +50,7 @@ public class BufferPool {
     public BufferPool(int numPages) {
         this.numPages = numPages;
         pagesMap = new ConcurrentHashMap<Integer, Page>(numPages);
+        lockManager = new LockManager();
     }
     
     public static int getPageSize() {
@@ -79,20 +84,24 @@ public class BufferPool {
      */
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-        // TODO 限定添加缓存页面数量为numPages
+    	lockManager.lock(tid, pid, perm);
     	Integer pageHashCode = pid.hashCode();
     	if (!pagesMap.containsKey(pageHashCode)) {
         	// 实例化一个Dbfile: 从Catalog得到（通过全局Dtabase得到Catalog实例对象）
     		DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
     		Page page = dbFile.readPage(pid);
-    		if (pagesMap.size() > numPages) {
+    		if (pagesMap.size() >= numPages) {
     			evictPage();
     		}
     		pagesMap.put(pid.hashCode(), page);
         }
         return pagesMap.get(pid.hashCode());
     }
-
+    
+    public LockManager getLockManager() {
+    	return lockManager;
+    }
+    
     /**
      * Releases the lock on a page.
      * Calling this is very risky, and may result in wrong behavior. Think hard
@@ -102,9 +111,8 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public  void unsafeReleasePage(TransactionId tid, PageId pid) {
-        // some code goes here
-        // not necessary for lab1|lab2
+    public void unsafeReleasePage(TransactionId tid, PageId pid) {
+        lockManager.unlock(tid, pid);
     }
 
     /**
@@ -113,15 +121,12 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      */
     public void transactionComplete(TransactionId tid) {
-        // some code goes here
-        // not necessary for lab1|lab2
+        transactionComplete(tid, true);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
-    public boolean holdsLock(TransactionId tid, PageId p) {
-        // some code goes here
-        // not necessary for lab1|lab2
-        return false;
+    public boolean holdsLock(TransactionId tid, PageId pid) {
+    	return lockManager.holdsLock(tid, pid);
     }
 
     /**
@@ -132,8 +137,22 @@ public class BufferPool {
      * @param commit a flag indicating whether we should commit or abort
      */
     public void transactionComplete(TransactionId tid, boolean commit) {
-        // some code goes here
-        // not necessary for lab1|lab2
+        // 先对修改得页进行操作，然后释放对应得锁
+    	try {
+    		if (commit) {
+    			flushPages(tid);
+    		} else {
+    			restorePages(tid);
+    		}
+    	} catch (IOException e) {
+			e.printStackTrace();
+		}
+    	// lockManager.releaseTransWaitLock(tid);
+    	Iterator<Map.Entry<Integer, Page>> pageIterator = pagesMap.entrySet().iterator();
+    	while (pageIterator.hasNext()) {
+    		Page page = pageIterator.next().getValue();
+    		unsafeReleasePage(tid, page.getId());
+    	}
     }
 
     /**
@@ -175,7 +194,7 @@ public class BufferPool {
      * @param tid the transaction deleting the tuple.
      * @param t the tuple to delete
      */
-    public  void deleteTuple(TransactionId tid, Tuple tup)
+    public void deleteTuple(TransactionId tid, Tuple tup)
         throws DbException, IOException, TransactionAbortedException {
     	 HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tup.getRecordId().getPageId().getTableId());
          List<Page> pageList = heapFile.deleteTuple(tid, tup);
@@ -191,7 +210,7 @@ public class BufferPool {
      * NB: Be careful using this routine -- it writes dirty data to disk so will
      *     break simpledb if running in NO STEAL mode.
      */
-    public synchronized void flushAllPages() throws IOException {
+    public void flushAllPages() throws IOException {
         for (Map.Entry<Integer, Page> entry: pagesMap.entrySet()) {
         	HeapPage page = (HeapPage) entry.getValue();
         	if (page.isDirty() != null) {
@@ -208,7 +227,7 @@ public class BufferPool {
         Also used by B+ tree files to ensure that deleted pages
         are removed from the cache so they can be reused safely
     */
-    public synchronized void discardPage(PageId pid) {
+    public void discardPage(PageId pid) {
         pagesMap.remove(pid.hashCode());
     }
 
@@ -216,7 +235,7 @@ public class BufferPool {
      * Flushes a certain page to disk
      * @param pid an ID indicating the page to flush
      */
-    private synchronized void flushPage(PageId pid) throws IOException {
+    private void flushPage(PageId pid) throws IOException {
         Page page = pagesMap.get(pid.hashCode());
         TransactionId tid = page.isDirty(); // 获取脏页的事务，如果为null说明不是脏页
         if (tid != null) {
@@ -226,27 +245,65 @@ public class BufferPool {
         	page.markDirty(false, null);
         }
     }
+    
+    private void restorePage(PageId pid) throws IOException {
+    	Page page = pagesMap.get(pid.hashCode());
+    	TransactionId tid = page.isDirty();
+    	if (tid != null) {
+    		page = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
+    		pagesMap.put(page.getId().hashCode(), page);
+    		page.markDirty(false, null);
+    	}
+    }
 
     /** Write all pages of the specified transaction to disk.
      */
-    public synchronized  void flushPages(TransactionId tid) throws IOException {
-        // some code goes here
-        // not necessary for lab1|lab2
+    public synchronized void flushPages(TransactionId tid) throws IOException {
+        for (RWLock rwLock: lockManager.tIdToLocksMap.get(tid)) {
+        	for (PageId pageId: lockManager.pageToLockMap.keySet()) {
+        		if (rwLock.equals(lockManager.pageToLockMap.get(pageId)) 
+        				&& pagesMap.containsKey(pageId.hashCode())) {
+        			flushPage(pageId);
+        			break;
+        		}
+        	}
+        }
+    }
+    
+    public synchronized void restorePages(TransactionId tid) throws IOException {
+    	for (RWLock rwLock: lockManager.tIdToLocksMap.get(tid)) {
+        	for (PageId pageId: lockManager.pageToLockMap.keySet()) {
+        		if (rwLock.equals(lockManager.pageToLockMap.get(pageId)) 
+        				&& pagesMap.containsKey(pageId.hashCode())) {
+        			restorePage(pageId);	
+        			break;
+        		}
+        	}
+        } 
     }
 
     /**
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
-    private synchronized void evictPage() throws DbException {
-        Iterator<Map.Entry<Integer, Page>> mapIterator = pagesMap.entrySet().iterator();
-        Page page = mapIterator.next().getValue();
-        try {
-			flushPage(page.getId());
-			discardPage(page.getId());
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+    private void evictPage() throws DbException {
+        Iterator<Map.Entry<Integer, Page>> pageIterator = pagesMap.entrySet().iterator();
+        // 不能驱逐脏页，事务的修改只有在提交后才会写入磁盘 —— no steal 策略
+        while (pageIterator.hasNext()) {
+        	Map.Entry<Integer, Page> item = pageIterator.next();
+        	HeapPage page = (HeapPage) item.getValue();
+        	if (page.isDirty() == null) {
+        		try {
+					flushPage(page.getId());
+					discardPage(page.getId());
+					return;
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+        	}
+        }
+        // 没有一个非脏页可以用来驱逐，则抛出异常
+        throw new DbException("No non-dirty pages can be used for expulsion!");
     }
 
 }

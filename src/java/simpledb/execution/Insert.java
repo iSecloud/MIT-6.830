@@ -93,7 +93,7 @@ public class Insert extends Operator {
         	try {
     			Database.getBufferPool().insertTuple(tid, tableId, tuple);
     			insertCount += 1;
-    		} catch (DbException | IOException | TransactionAbortedException e) {
+    		} catch (DbException | IOException e) {
     			e.printStackTrace();
     			break;
     		}

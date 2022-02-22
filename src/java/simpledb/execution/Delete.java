@@ -84,7 +84,7 @@ public class Delete extends Operator {
         	try {
     			Database.getBufferPool().deleteTuple(tid, tuple);
     			deleteCount += 1;
-    		} catch (DbException | IOException | TransactionAbortedException e) {
+    		} catch (DbException | IOException e) {
     			// TODO 忽略删除失败的or直接报错？
     			continue;
     		}

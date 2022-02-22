@@ -111,12 +111,22 @@ public class HeapFile implements DbFile {
     	ArrayList<Page> pageList = new ArrayList<Page>();
     	// 寻找是否某个页具有空的slot可以插入
     	for (int pageIndex = 0; pageIndex < numPages(); pageIndex += 1) {
-    		HeapPage page = (HeapPage) Database.getBufferPool().getPage(
-    				tid, new HeapPageId(getId(), pageIndex), Permissions.READ_WRITE);
+    		// 先用读锁尝试获取该页
+    		HeapPageId heapPageId = new HeapPageId(getId(), pageIndex);
+    		HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, heapPageId, Permissions.READ_ONLY);
     		if (page.getNumEmptySlots() != 0) {
+    			// 如果有空lost，则用写模式重新读取该页，并进行修改
+    			// Database.getBufferPool().unsafeReleasePage(tid, heapPageId);
+    			page = (HeapPage) Database.getBufferPool().getPage(tid, heapPageId, Permissions.READ_WRITE);
     			page.insertTuple(tup);
     			pageList.add(page);
     			return pageList;
+    		}
+    		else {
+    			// 如果用不了该页，则及时释放读锁
+    			if (Database.getBufferPool().getLockManager().pageToPermMap.get(heapPageId).equals(Permissions.READ_ONLY)) {
+    				Database.getBufferPool().unsafeReleasePage(tid, heapPageId);
+    			}
     		}
     	}
     	// 否则新建一个页并且缓存到BufferPool中(注意这一页是HeapFile最后一页)
@@ -147,7 +157,7 @@ public class HeapFile implements DbFile {
     
     public class HeapFileIterator implements DbFileIterator {
     	/**
-    	 * tid: 事务id？
+    	 * tid: 事务id
     	 * pageNumber: 当前读取的页号
     	 * tpIterator: 迭代当前页面的元组
     	 * headFile: 页文件
@@ -243,4 +253,3 @@ public class HeapFile implements DbFile {
     }
 
 }
-

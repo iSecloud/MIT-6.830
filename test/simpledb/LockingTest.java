@@ -11,6 +11,7 @@ import simpledb.common.Utility;
 import simpledb.storage.BufferPool;
 import simpledb.storage.HeapPageId;
 import simpledb.storage.PageId;
+import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
 public class LockingTest extends TestUtil.CreateHeapFile {
@@ -45,7 +46,7 @@ public class LockingTest extends TestUtil.CreateHeapFile {
 
     this.p0 = new HeapPageId(empty.getId(), 0);
     this.p1 = new HeapPageId(empty.getId(), 1);
-      PageId p2 = new HeapPageId(empty.getId(), 2);
+    PageId p2 = new HeapPageId(empty.getId(), 2);
     this.tid1 = new TransactionId();
     this.tid2 = new TransactionId();
 
@@ -102,6 +103,22 @@ public class LockingTest extends TestUtil.CreateHeapFile {
     // TODO(ghuo): yes, stop() is evil, but this is unit test cleanup
     t.stop();
   }
+  
+  public void grabLockFuck(TransactionId tid, PageId pid, Permissions perm,
+	      boolean expected) throws Exception {
+
+	    TestUtil.LockGrabber t = new TestUtil.LockGrabber(tid, pid, perm);
+	    t.start();
+	    Thread.sleep(TIMEOUT);
+	    bp.unsafeReleasePage(tid1, p0);
+	    Thread.sleep(TIMEOUT);
+	    assertEquals(t.acquired, true);
+
+	    // if we don't have the lock after TIMEOUT, we assume blocking.
+
+	    // TODO(ghuo): yes, stop() is evil, but this is unit test cleanup
+	    t.stop();
+	  }
 
   /**
    * Unit test for BufferPool.getPage() assuming locking.
@@ -166,6 +183,20 @@ public class LockingTest extends TestUtil.CreateHeapFile {
                    tid1, p0, Permissions.READ_WRITE, true);
     metaLockTester(tid2, p1, Permissions.READ_ONLY,
                    tid2, p1, Permissions.READ_WRITE, true);
+  }
+  
+  @Test public void lockUpgradeFuck() throws Exception {
+	  metaLockTester(tid1, p0, Permissions.READ_ONLY,
+              tid2, p0, Permissions.READ_ONLY, true);
+	  
+	  grabLockFuck(tid2, p0, Permissions.READ_WRITE, true);
+  }
+  
+  @Test public void deadlockDetced() throws Exception {
+	  metaLockTester(tid1, p0, Permissions.READ_ONLY,
+              tid2, p0, Permissions.READ_WRITE, false);
+	  metaLockTester(tid1, p0, Permissions.READ_WRITE,
+              tid1, p0, Permissions.READ_WRITE, true);
   }
 
   /**
