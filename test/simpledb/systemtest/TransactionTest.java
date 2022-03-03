@@ -31,7 +31,7 @@ import static org.junit.Assert.*;
  */
 public class TransactionTest extends SimpleDbTestBase {
     // Wait up to 10 minutes for the test to complete
-    private static final int TIMEOUT_MILLIS = 10 * 1000;
+    private static final int TIMEOUT_MILLIS = 10 * 1000 * 100;
     private void validateTransactions(int threads)
             throws DbException, TransactionAbortedException, IOException {
         // Create a table with a single integer value = 0
@@ -50,7 +50,7 @@ public class TransactionTest extends SimpleDbTestBase {
         for (XactionTester tester : list) {
             long timeout = stopTestTime - System.currentTimeMillis();
             if (timeout <= 0) {
-                // fail("Timed out waiting for transaction to complete");
+                // fail("Timed out waiting for transaction to complete!!");
             }
             try {
                 tester.join(timeout);
@@ -120,6 +120,18 @@ public class TransactionTest extends SimpleDbTestBase {
 
                         // race the other threads to finish the transaction: one will win
                         q1.close();
+                        
+//                        SeqScan ss3 = new SeqScan(tr.getId(), tableId, "");
+//                        Query qt3 = new Query(ss3, tr.getId());
+//                        int count = 0;
+//                        qt3.start();
+//                        while (qt3.hasNext()) {
+//                        	qt3.next();
+//                        	count += 1;
+//                        }
+//                        qt3.close();
+//                        System.out.printf("SCAN: I am %s, tuple num is %d value is %d\n", 
+//                        		Thread.currentThread().getName(), count, ((IntField) t.getField(0)).getValue());
 
                         // delete old values (i.e., just one row) from table
                         Delete delOp = new Delete(tr.getId(), ss2);
@@ -141,13 +153,27 @@ public class TransactionTest extends SimpleDbTestBase {
                         q3.start();
                         q3.next();
                         q3.close();
+                        
+//                        SeqScan ss4 = new SeqScan(tr.getId(), tableId, "");
+//                        Query qt4 = new Query(ss4, tr.getId());
+//                        count = 0;
+//                        qt4.start();
+//                        while (qt4.hasNext()) {
+//                        	qt4.next();
+//                        	count += 1;
+//                        }
+//                        qt4.close();
+//                        System.out.printf("INSERT: I am %s, tuple num is %d value is %d\n", 
+//                        		Thread.currentThread().getName(), count, ((IntField) t.getField(0)).getValue());
 
                         tr.commit();
+                        // System.out.printf("I am %s, I have commit this transaction\n", Thread.currentThread().getName());
                         break;
                     } catch (TransactionAbortedException te) {
                         //System.out.println("thread " + tr.getId() + " killed");
                         // give someone else a chance: abort the transaction
                         tr.transactionComplete(true);
+                        // System.out.printf("I am %s, Rollback...\n", Thread.currentThread().getName());
                         latch.stillParticipating();
                     }
                 }
@@ -232,6 +258,11 @@ public class TransactionTest extends SimpleDbTestBase {
     @Test public void testTenThreads()
     throws IOException, DbException, TransactionAbortedException {
         validateTransactions(10);
+    }
+    
+    @Test public void testManyThreads()
+    throws IOException, DbException, TransactionAbortedException {
+        validateTransactions(120);
     }
 
     @Test public void testAllDirtyFails()

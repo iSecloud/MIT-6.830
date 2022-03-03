@@ -42,7 +42,8 @@ public class BTreeInternalPage extends BTreePage {
 		}
 
         assert null == upperBound || null == prev || (prev.compare(Op.LESS_THAN_OR_EQ, upperBound));
-
+        
+        // System.out.printf("NumEntries:%d MaxEntries:%d\n", getNumEntries(), getMaxEntries());
         assert !checkOccupancy || depth <= 0 || (getNumEntries() >= getMaxEntries() / 2);
 	}
 	
@@ -72,7 +73,7 @@ public class BTreeInternalPage extends BTreePage {
 	 */
 	public BTreeInternalPage(BTreePageId id, byte[] data, int key) throws IOException {
 		super(id, key);
-		this.numSlots = getMaxEntries() + 1;
+		this.numSlots = getMaxEntries() + 1; 
 		DataInputStream dis = new DataInputStream(new ByteArrayInputStream(data));
 
 		// Read the parent pointer

@@ -676,6 +676,7 @@ public class BTreeUtility {
 				List<Integer> tuple = tupleToList(t);
 				insertedTuples.put(tuple);
 				synchronized(slock) {
+					// System.out.printf("I am %s, I inserted a tuple successfully!\n", Thread.currentThread().getName());
 					success = true;
 				}
 			} catch (Exception e) {

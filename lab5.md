@@ -277,7 +277,6 @@ duplicate tuples and next key locking. -->
 
 ***
 
-
 ## 4. Delete
 
 In order to keep the tree balanced and not waste unnecessary space, deletions in
@@ -290,7 +289,6 @@ src="redist_internal.png"><br> <i>Figure 3: Redistributing pages</i> </p>
 
 <p align="center"> <img width=500 src="merging_leaf.png"><br> <img width=500
 src="merging_internal.png"><br> <i>Figure 4: Merging pages</i> </p>
-
 As described in the textbook, attempting to delete a tuple from a leaf page that
 is less than half full should cause that page to either steal tuples from one of
 its siblings or merge with one of its siblings.  If one of the page's siblings

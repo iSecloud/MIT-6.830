@@ -1,5 +1,7 @@
 package simpledb.transaction;
 
+import java.util.concurrent.CopyOnWriteArraySet;
+
 import simpledb.common.Permissions;
 import simpledb.storage.PageId;
 
@@ -13,7 +15,7 @@ public class RWLock {
 		writeLockCount = 0;
 	}
     
-    public synchronized void lock(LockManager lockManager, TransactionId tId, PageId pId, Permissions perm) 
+    public void lock(LockManager lockManager, TransactionId tId, PageId pId, Permissions perm) 
     		throws InterruptedException, TransactionAbortedException {
     	// 如果当前有读锁且想获得写锁，则进行锁升级
     	if (isLockUpgrade(lockManager, tId, pId, perm)) {
@@ -58,62 +60,81 @@ public class RWLock {
     	return false;
     }
     
-    public synchronized void writeLock(LockManager lockManager, TransactionId tId, PageId pId, Permissions perm) 
+    public void writeLock(LockManager lockManager, TransactionId tId, PageId pId, Permissions perm) 
     		throws InterruptedException, TransactionAbortedException {
-//    	long begin = System.currentTimeMillis();
-//    	long rest = RESET;
-    	while (writeLockCount != 0 || readLockCount != 0) {
-//    		this.wait(rest);
-//    		rest = rest - (System.currentTimeMillis() - begin);
-    		this.wait();
-    	}
-//    	if (rest < 0) {
-//    		throw new TransactionAbortedException();
-//    	}
-    	writeLockCount += 1;
-    	lockManager.tIdToLocksMap.get(tId).add(lockManager.pageToLockMap.get(pId));
-		lockManager.pageToPermMap.put(pId, perm);
+    	synchronized (LockManager.LOCK) {
+    		if (lockManager.tIdWatiToGetPageWriteLockMap.get(pId) == null) {
+				lockManager.tIdWatiToGetPageWriteLockMap.put(pId, new CopyOnWriteArraySet<TransactionId>());
+			}
+    		while (writeLockCount + readLockCount != 0 
+    				|| lockManager.tIdWatiToGetPageWriteLockMap.get(pId).size() > 1
+    				|| (lockManager.tIdWatiToGetPageWriteLockMap.get(pId).size() == 1 
+    					&& !lockManager.tIdWatiToGetPageWriteLockMap.get(pId).contains(tId))) {
+    			// TODO lockManager.tIdWatiToGetWriteLock.size() > 1 这个条件可否不要？
+    			// 因为逻辑上只能先获取读锁再获取写锁
+    			if (lockManager.tIdWatiToGetPageWriteLockMap.get(pId).size() == 0) {
+    				lockManager.tIdWatiToGetPageWriteLockMap.get(pId).add(tId);
+    			}  
+    			LockManager.LOCK.wait();
+        	}
+    		if (lockManager.tIdWatiToGetPageWriteLockMap.get(pId).contains(tId)) {
+    			lockManager.tIdWatiToGetPageWriteLockMap.get(pId).remove(tId);
+    		}
+        	writeLockCount += 1;
+        	lockManager.tIdToLocksMap.get(tId).add(lockManager.pageToLockMap.get(pId));
+    		lockManager.pageToPermMap.put(pId, perm);
+    		// System.out.printf("I am Thread%s I got the write lock!! read lock:%d write lock:%d\n", Thread.currentThread().getName(), readLockCount, writeLockCount);
+		}
     }
     
-    public synchronized void readLock(LockManager lockManager, TransactionId tId, PageId pId, Permissions perm) 
+    public void readLock(LockManager lockManager, TransactionId tId, PageId pId, Permissions perm) 
     		throws InterruptedException, TransactionAbortedException {
-//    	long begin = System.currentTimeMillis();
-//    	long rest = RESET;
-    	while (writeLockCount != 0) {
-//    		this.wait(rest);
-//    		rest = rest - (System.currentTimeMillis() - begin);
-    		this.wait();
-    	}
-//    	if (rest < 0) {
-//    		throw new TransactionAbortedException();
-//    	}
-    	readLockCount += 1;
-    	lockManager.tIdToLocksMap.get(tId).add(lockManager.pageToLockMap.get(pId));
-		lockManager.pageToPermMap.put(pId, perm);
+    	synchronized (LockManager.LOCK) {
+    		if (lockManager.tIdWatiToGetPageWriteLockMap.get(pId) == null) {
+				lockManager.tIdWatiToGetPageWriteLockMap.put(pId, new CopyOnWriteArraySet<TransactionId>());
+			}
+    		while (writeLockCount != 0 || lockManager.tIdWatiToGetPageWriteLockMap.get(pId).size() != 0) {
+    			LockManager.LOCK.wait();
+        	}
+        	readLockCount += 1;
+        	lockManager.tIdToLocksMap.get(tId).add(lockManager.pageToLockMap.get(pId));
+    		lockManager.pageToPermMap.put(pId, perm);
+    		// System.out.printf("I am Thread%s I got the read lock!! read lock:%d write lock:%d\n", Thread.currentThread().getName(), readLockCount, writeLockCount);
+		}
     }
     
-    public synchronized void readUnlock() {
-    	if (readLockCount > 0) {
-    		readLockCount -= 1;
-    	}
-    	this.notifyAll();
+    public void readUnlock(LockManager lockManager) {
+    	synchronized (LockManager.LOCK) {
+    		if (readLockCount > 0) {
+        		readLockCount -= 1;
+        	}
+    		// System.out.printf("I am %s, release read lock, read lock:%d write lock:%d\n", Thread.currentThread().getName(), readLockCount, writeLockCount);
+    		LockManager.LOCK.notifyAll();
+		}
     }
     
-    public synchronized void writeUnlock() {
-    	if (writeLockCount > 0) {
-    		writeLockCount -= 1;
-    	}
-    	this.notifyAll();
+    public void writeUnlock(LockManager lockManager) {
+    	synchronized (LockManager.LOCK) {
+    		if (writeLockCount > 0) {
+        		writeLockCount -= 1;
+        	}
+    		// System.out.printf("I am %s, release write lock, read lock:%d write lock:%d\n", Thread.currentThread().getName(), readLockCount, writeLockCount);
+    		LockManager.LOCK.notifyAll();
+		}
     }
     
     public int getReadLockNum() {
     	return readLockCount;
     }
     
-    public synchronized void lockUpgrade(LockManager lockManager, TransactionId tId, PageId pId, Permissions perm) 
+    public int getWriteLockNum() {
+    	return writeLockCount;
+    }
+    
+    public void lockUpgrade(LockManager lockManager, TransactionId tId, PageId pId, Permissions perm) 
     		throws InterruptedException, TransactionAbortedException {
     	// 锁升级 释放读锁, 获得写锁并且更新页的读写类型
-    	readUnlock();
+    	readUnlock(lockManager);
     	writeLock(lockManager, tId, pId, perm);
     }
     

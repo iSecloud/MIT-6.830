@@ -271,11 +271,18 @@ public class BTreeFileInsertTest extends SimpleDbTestBase {
 		DbFileIterator fit = bigFile.iterator(tid);
 		int count = 0;
 		Tuple prev = null;
+		Tuple tup = null;
 		fit.open();
 		while(fit.hasNext()) {
-			Tuple tup = fit.next();
-			if(prev != null)
+			tup = fit.next();
+			if(prev != null) {
+				if (!tup.getField(0).compare(Op.GREATER_THAN_OR_EQ, prev.getField(0))) {
+					System.out.println(prev.getField(0));
+					System.out.println(tup.getField(0));
+					System.out.println(count);
+				}
 				assertTrue(tup.getField(0).compare(Op.GREATER_THAN_OR_EQ, prev.getField(0)));
+			}
 			prev = tup;
 			count++;
 		}

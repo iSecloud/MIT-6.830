@@ -136,7 +136,13 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param commit a flag indicating whether we should commit or abort
      */
-    public void transactionComplete(TransactionId tid, boolean commit) {
+    public synchronized void transactionComplete(TransactionId tid, boolean commit) {
+//    	if (commit) {
+//    		System.out.printf("I am %s, I have commit\n", Thread.currentThread().getName());
+//    	} else {
+//    		System.out.printf("I am %s, I have rollback\n", Thread.currentThread().getName());
+//    	}
+    	
         // 先对修改得页进行操作，然后释放对应得锁
     	try {
     		if (commit) {
@@ -172,12 +178,11 @@ public class BufferPool {
      */
     public void insertTuple(TransactionId tid, int tableId, Tuple tup)
         throws DbException, IOException, TransactionAbortedException {
-        HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
-        List<Page> pageList = heapFile.insertTuple(tid, tup);
+        DbFile file = Database.getCatalog().getDatabaseFile(tableId);
+        List<Page> pageList = file.insertTuple(tid, tup);
         for (Page page: pageList) {
-        	HeapPage heapPage = (HeapPage) page;
-        	heapPage.markDirty(true, tid);
-        	pagesMap.put(heapPage.getId().hashCode(), heapPage);
+        	page.markDirty(true, tid);
+        	pagesMap.put(page.getId().hashCode(), page);
         }
     }
 
@@ -196,12 +201,11 @@ public class BufferPool {
      */
     public void deleteTuple(TransactionId tid, Tuple tup)
         throws DbException, IOException, TransactionAbortedException {
-    	 HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tup.getRecordId().getPageId().getTableId());
-         List<Page> pageList = heapFile.deleteTuple(tid, tup);
+    	 DbFile file = Database.getCatalog().getDatabaseFile(tup.getRecordId().getPageId().getTableId());
+         List<Page> pageList = file.deleteTuple(tid, tup);
          for (Page page: pageList) {
-         	HeapPage heapPage = (HeapPage) page;
-         	heapPage.markDirty(true, tid);
-         	pagesMap.put(heapPage.getId().hashCode(), heapPage);
+        	 page.markDirty(true, tid);
+         	 pagesMap.put(page.getId().hashCode(), page);
          }
     }
 
@@ -212,7 +216,7 @@ public class BufferPool {
      */
     public void flushAllPages() throws IOException {
         for (Map.Entry<Integer, Page> entry: pagesMap.entrySet()) {
-        	HeapPage page = (HeapPage) entry.getValue();
+        	Page page = entry.getValue();
         	if (page.isDirty() != null) {
         		flushPage(page.getId());
         	}
@@ -240,8 +244,8 @@ public class BufferPool {
         TransactionId tid = page.isDirty(); // 获取脏页的事务，如果为null说明不是脏页
         if (tid != null) {
         	// TODO 日志记录，便于回滚 Database.getLogFile().logWrite
-        	HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(pid.getTableId());
-        	heapFile.writePage(page);
+        	DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
+        	file.writePage(page);
         	page.markDirty(false, null);
         }
     }
@@ -259,6 +263,9 @@ public class BufferPool {
     /** Write all pages of the specified transaction to disk.
      */
     public synchronized void flushPages(TransactionId tid) throws IOException {
+    	if (lockManager.tIdToLocksMap.isEmpty()) {
+    		return;
+    	}
         for (RWLock rwLock: lockManager.tIdToLocksMap.get(tid)) {
         	for (PageId pageId: lockManager.pageToLockMap.keySet()) {
         		if (rwLock.equals(lockManager.pageToLockMap.get(pageId)) 
@@ -271,6 +278,9 @@ public class BufferPool {
     }
     
     public synchronized void restorePages(TransactionId tid) throws IOException {
+    	if (lockManager.tIdToLocksMap.isEmpty()) {
+    		return;
+    	}
     	for (RWLock rwLock: lockManager.tIdToLocksMap.get(tid)) {
         	for (PageId pageId: lockManager.pageToLockMap.keySet()) {
         		if (rwLock.equals(lockManager.pageToLockMap.get(pageId)) 
@@ -291,7 +301,7 @@ public class BufferPool {
         // 不能驱逐脏页，事务的修改只有在提交后才会写入磁盘 —— no steal 策略
         while (pageIterator.hasNext()) {
         	Map.Entry<Integer, Page> item = pageIterator.next();
-        	HeapPage page = (HeapPage) item.getValue();
+        	Page page = item.getValue();
         	if (page.isDirty() == null) {
         		try {
 					flushPage(page.getId());

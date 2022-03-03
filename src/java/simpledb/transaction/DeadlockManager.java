@@ -73,27 +73,14 @@ public class DeadlockManager {
 				lockWaitListMap.put(rwLock, new CopyOnWriteArrayList<DeadlockManager.TransactionWait>());
 			}
 			lockWaitListMap.get(rwLock).add(trans);
+		} else {
+			return;
 		}
 		if (isWaitGraphCycle()) {
 			// throw new TransactionAbortedException("Find the existence of a deadlock");
 			throw new TransactionAbortedException();
 		}
 	}
-	
-//	public void releaseTransLock(TransactionId tId, ConcurrentHashMap<TransactionId, Set<RWLock>> tIdToLocksMap) {
-//		for (RWLock rwLock: tIdToLocksMap.get(tId)) {
-//			for (TransactionWait trans: transactionWaitList) {
-//				if (trans.tId.equals(tId)) {
-//					lockWaitListMap.get(rwLock).remove(trans);
-//				}	
-//			}
-//		}
-//		for (TransactionWait trans: transactionWaitList) {
-//			if (trans.tId.equals(tId)) {
-//				transactionWaitList.remove(trans);
-//			}
-//		}
-//	}
 	
 	public void releaseTransLock(TransactionId tId, RWLock rwLock) {
 		for (TransactionWait trans: transactionWaitList) {
@@ -106,8 +93,8 @@ public class DeadlockManager {
 	
 	public boolean isWaitGraphCycle() {
 		// 初始化图数据结构
-		HashMap<TransactionId, Integer> transInDegreeMap = new HashMap<TransactionId, Integer>();
-		HashMap<TransactionId, ArrayList<TransactionId>> waitGraph = new HashMap<TransactionId, ArrayList<TransactionId>>();
+		ConcurrentHashMap<TransactionId, Integer> transInDegreeMap = new ConcurrentHashMap<TransactionId, Integer>();
+		ConcurrentHashMap<TransactionId, CopyOnWriteArrayList<TransactionId>> waitGraph = new ConcurrentHashMap<TransactionId, CopyOnWriteArrayList<TransactionId>>();
 		// 初始化循环等待图
 		for (TransactionWait trans: transactionWaitList) {
 			transInDegreeMap.put(trans.tId, 0);
@@ -124,7 +111,7 @@ public class DeadlockManager {
 					int inDegree = transInDegreeMap.get(transB.tId) + 1;
 					transInDegreeMap.put(transB.tId, inDegree);
 					if (!waitGraph.containsKey(transA.tId)) {
-						waitGraph.put(transA.tId, new ArrayList<TransactionId>());
+						waitGraph.put(transA.tId, new CopyOnWriteArrayList<TransactionId>());
 					}
 					waitGraph.get(transA.tId).add(transB.tId);
 				}

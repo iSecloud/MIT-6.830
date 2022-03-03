@@ -174,9 +174,11 @@ public class BTreeFileDeleteTest extends SimpleDbTestBase {
 
 		// now there should be 2 leaf pages, 1 internal page, 1 unused leaf page, 1 header page
 		assertEquals(5, threeLeafPageFile.numPages());
+		BTreeChecker.checkRep(threeLeafPageFile, tid, new HashMap<>(), true);
 
 		// insert enough tuples to ensure one of the leaf pages splits
 		for(int i = 0; i < 502; ++i) {
+			BTreeChecker.checkRep(threeLeafPageFile, tid, new HashMap<>(), true);
 			Database.getBufferPool().insertTuple(tid, threeLeafPageFile.getId(),
 					BTreeUtility.getBTreeTuple(i, 2));
 		}
@@ -208,6 +210,15 @@ public class BTreeFileDeleteTest extends SimpleDbTestBase {
 		BTreeInternalPage rightChild = (BTreeInternalPage) Database.getBufferPool().getPage(
 				tid, rootEntry.getRightChild(), Permissions.READ_ONLY);
 
+//		Iterator<BTreeEntry> testIt = rightChild.iterator();
+//		while (testIt.hasNext()) {
+//			BTreeLeafPage leaf = (BTreeLeafPage) Database.getBufferPool().getPage(tid, 
+//					testIt.next().getLeftChild(), Permissions.READ_ONLY);
+//			if (leaf.getNumTuples() == 0) {
+//				System.out.println(leaf);
+//			}
+//		}
+		
 		// delete from the right child to test redistribution from the left
 		Iterator<BTreeEntry> it = rightChild.iterator();
 		int count = 0;
@@ -215,7 +226,17 @@ public class BTreeFileDeleteTest extends SimpleDbTestBase {
 		while(it.hasNext() && count < 49 * 502 + 1) {
 			BTreeLeafPage leaf = (BTreeLeafPage) Database.getBufferPool().getPage(tid, 
 					it.next().getLeftChild(), Permissions.READ_ONLY);
-			Tuple t = leaf.iterator().next();
+			Tuple t = null;
+//			if (leaf.getNumTuples() == 0) {
+//				System.out.println(leaf);
+//			}
+			try {
+				t = leaf.iterator().next();
+			} catch (Exception e) {
+				t = leaf.iterator().next();
+				System.out.println(leaf);
+				throw new NoSuchElementException();
+			}
 			Database.getBufferPool().deleteTuple(tid, t);
 			it = rightChild.iterator();
 			count++;
