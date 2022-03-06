@@ -83,7 +83,7 @@ public class RWLock {
         	writeLockCount += 1;
         	lockManager.tIdToLocksMap.get(tId).add(lockManager.pageToLockMap.get(pId));
     		lockManager.pageToPermMap.put(pId, perm);
-    		// System.out.printf("I am Thread%s I got the write lock!! read lock:%d write lock:%d\n", Thread.currentThread().getName(), readLockCount, writeLockCount);
+    		// System.out.printf("I am %s I got the write lock!! read lock:%d write lock:%d\n", Thread.currentThread().getName(), readLockCount, writeLockCount);
 		}
     }
     
@@ -99,7 +99,7 @@ public class RWLock {
         	readLockCount += 1;
         	lockManager.tIdToLocksMap.get(tId).add(lockManager.pageToLockMap.get(pId));
     		lockManager.pageToPermMap.put(pId, perm);
-    		// System.out.printf("I am Thread%s I got the read lock!! read lock:%d write lock:%d\n", Thread.currentThread().getName(), readLockCount, writeLockCount);
+    		// System.out.printf("I am %s I got the read lock!! read lock:%d write lock:%d\n", Thread.currentThread().getName(), readLockCount, writeLockCount);
 		}
     }
     

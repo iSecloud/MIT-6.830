@@ -152,12 +152,14 @@ public class LogFile {
         synchronized (Database.getBufferPool()) {
 
             synchronized(this) {
+            	// print();
                 preAppend();
                 //Debug.log("ABORT");
                 //should we verify that this is a live transaction?
 
                 // must do this here, since rollback only works for
                 // live transactions (needs tidToFirstLogRecord)
+                // System.out.printf("tid: %d\n", tid.getId());
                 rollback(tid);
 
                 raf.writeInt(ABORT_RECORD);
@@ -196,7 +198,7 @@ public class LogFile {
 
         @see Page#getBeforeImage
     */
-    public  synchronized void logWrite(TransactionId tid, Page before,
+    public synchronized void logWrite(TransactionId tid, Page before,
                                        Page after)
         throws IOException  {
         Debug.log("WRITE, offset = " + raf.getFilePointer());
@@ -208,7 +210,7 @@ public class LogFile {
            before page data (see writePageData)
            after page data
            start offset
-        */
+        */	
         raf.writeInt(UPDATE_RECORD);
         raf.writeLong(tid.getId());
 
@@ -334,7 +336,7 @@ public class LogFile {
                     //Debug.log("WRITING CHECKPOINT TRANSACTION OFFSET: " + tidToFirstLogRecord.get(key));
                     raf.writeLong(tidToFirstLogRecord.get(key));
                 }
-
+ 
                 //once the CP is written, make sure the CP location at the
                 // beginning of the log file is updated
                 endCpOffset = raf.getFilePointer();
@@ -346,8 +348,8 @@ public class LogFile {
                 //Debug.log("CP OFFSET = " + currentOffset);
             }
         }
-
         logTruncate();
+        // print();
     }
 
     /** Truncate any unneeded portion of the log to reduce its space
@@ -443,7 +445,6 @@ public class LogFile {
         newFile.delete();
 
         currentOffset = raf.getFilePointer();
-        //print();
     }
 
     /** Rollback the specified transaction, setting the state of any
@@ -459,7 +460,42 @@ public class LogFile {
         synchronized (Database.getBufferPool()) {
             synchronized(this) {
                 preAppend();
-                // some code goes here
+                if (!tidToFirstLogRecord.containsKey(tid.getId())) {
+                	throw new NoSuchElementException("This Transaction doesn't exit");
+                }
+                // Long currentPoinerPos = raf.getFilePointer();
+                Long transBeginOffset = tidToFirstLogRecord.get(tid.getId());
+                raf.seek(transBeginOffset);
+                // System.out.printf("The transaction%d begins in %d\n", tid.getId(), transBeginOffset);
+                Set<PageId> firstAppearPage = new HashSet<PageId>();
+                while(true) {
+                	try {
+                		int cpType = raf.readInt();
+                        long cpTid = raf.readLong();
+                    	if (cpType == UPDATE_RECORD) {
+                    		Page beforePage = readPageData(raf);
+                    		Page afterPage = readPageData(raf);
+                    		if (!firstAppearPage.contains(beforePage.getId()) && tid.getId() == cpTid) {
+                    			firstAppearPage.add(beforePage.getId());
+                    			// 把缓存的页丢弃并写入旧页数据，注意要及时释放该页上的锁
+                        		Database.getBufferPool().unsafeReleasePage(tid, beforePage.getId());
+                        		Database.getBufferPool().discardPage(beforePage.getId());
+                        		Database.getCatalog().getDatabaseFile(beforePage.getId().getTableId()).writePage(beforePage);
+                    		}
+                    	} 
+                    	else if (cpType == CHECKPOINT_RECORD) {
+                    		int numTransactions = raf.readInt();
+                    		while (numTransactions-- > 0) {
+                                raf.readLong();
+                                raf.readLong();
+                            }
+                    	}
+                    	long cpOffset = raf.readLong();
+                	} catch (EOFException e) {
+						break;
+					}
+                }
+                // raf.seek(currentPoinerPos);
             }
         }
     }
@@ -485,8 +521,68 @@ public class LogFile {
     public void recover() throws IOException {
         synchronized (Database.getBufferPool()) {
             synchronized (this) {
+            	// print();
                 recoveryUndecided = false;
-                // some code goes here
+                Set<PageId> beforePageIds = new HashSet<PageId>();
+                Map<Long, ArrayList<Page>> transBeforeImages = new HashMap<Long, ArrayList<Page>>();
+                Map<Long, ArrayList<Page>> transAfterImages = new HashMap<Long, ArrayList<Page>>();
+                Set<Long> redoTransactions = new HashSet<Long>();
+                Set<Long> undoTransactions = new HashSet<Long>();
+                raf.seek(0);
+                // 获得checkpoint的偏移 TODO：这里需要seek到这个位置嘛？
+                Long checkpointOffset = raf.readLong();
+                while(true) {
+                	try {
+                		int cpType = raf.readInt();
+                        long cpTid = raf.readLong();
+                        if (cpType == BEGIN_RECORD || cpType == ABORT_RECORD) {
+                        	undoTransactions.add(cpTid);
+                        }
+                        else if (cpType == COMMIT_RECORD) {
+                        	undoTransactions.remove(cpTid);
+                        	redoTransactions.add(cpTid);
+                        }
+                        else if (cpType == UPDATE_RECORD) {
+                        	Page beforePage = readPageData(raf);
+                    		Page afterPage = readPageData(raf);
+                    		if (!transBeforeImages.containsKey(cpTid)) {
+                    			transBeforeImages.put(cpTid, new ArrayList<Page>());
+                    		}
+                    		if (!beforePageIds.contains(beforePage.getId())) {
+                    			transBeforeImages.get(cpTid).add(beforePage);
+                    			beforePageIds.add(beforePage.getId());
+                    		}
+                    		if (!transAfterImages.containsKey(cpTid)) {
+                    			transAfterImages.put(cpTid, new ArrayList<Page>());
+                    		}
+                    		transAfterImages.get(cpTid).add(afterPage);
+                        }
+                        else if (cpType == CHECKPOINT_RECORD) {
+                        	int numTransactions = raf.readInt();
+                    		while (numTransactions-- > 0) {
+                                raf.readLong();
+                                raf.readLong();
+                            }
+                        }
+                        long cpOffset = raf.readLong();
+                 		
+                	} catch (EOFException e) {
+						break;
+					}
+                }
+                // recovery 是在数据库启动阶段,此时没有任何锁和页缓存
+                // 将undo事务的page用before-image覆盖,redo事务的page用after-image覆盖
+                for (Long tid1: undoTransactions) {
+                	for (Page page: transBeforeImages.getOrDefault(tid1, new ArrayList<Page>())) {
+                		Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                	}
+                }
+                
+                for (Long tid2: redoTransactions) {
+                	for (Page page: transAfterImages.getOrDefault(tid2, new ArrayList<Page>())) {
+                		Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                	}
+                }
             }
          }
     }
@@ -567,7 +663,7 @@ public class LogFile {
         raf.seek(curOffset);
     }
 
-    public  synchronized void force() throws IOException {
+    public synchronized void force() throws IOException {
         raf.getChannel().force(true);
     }
 

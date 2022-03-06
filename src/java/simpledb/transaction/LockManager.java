@@ -81,7 +81,7 @@ public class LockManager {
 	        	return;
 	        } 
 	        RWLock rwLock = pageToLockMap.get(pId);
-	        if (!tIdToLocksMap.get(tId).contains(rwLock)) {
+	        if (!tIdToLocksMap.getOrDefault(tId, new CopyOnWriteArraySet<RWLock>()).contains(rwLock)) {
 	        	return;
 	        }
 			if (pageToPermMap.get(pId).equals(Permissions.READ_ONLY)) {

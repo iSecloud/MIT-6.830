@@ -15,6 +15,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -138,9 +139,9 @@ public class BufferPool {
      */
     public synchronized void transactionComplete(TransactionId tid, boolean commit) {
 //    	if (commit) {
-//    		System.out.printf("I am %s, I have commit\n", Thread.currentThread().getName());
+//    		System.out.printf("I am %s, I have commit\n", tid.getId());
 //    	} else {
-//    		System.out.printf("I am %s, I have rollback\n", Thread.currentThread().getName());
+//    		System.out.printf("I am %s, I have rollback\n", tid.getId());
 //    	}
     	
         // 先对修改得页进行操作，然后释放对应得锁
@@ -243,10 +244,15 @@ public class BufferPool {
         Page page = pagesMap.get(pid.hashCode());
         TransactionId tid = page.isDirty(); // 获取脏页的事务，如果为null说明不是脏页
         if (tid != null) {
-        	// TODO 日志记录，便于回滚 Database.getLogFile().logWrite
+        	// 日志记录，便于回滚 Database.getLogFile().logWrite
+        	Database.getLogFile().logWrite(tid, page.getBeforeImage(), page);
+            Database.getLogFile().force();
         	DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
         	file.writePage(page);
         	page.markDirty(false, null);
+        	// use current page contents as the before-image
+        	// for the next transaction that modifies this page.
+        	page.setBeforeImage();
         }
     }
     
@@ -266,7 +272,7 @@ public class BufferPool {
     	if (lockManager.tIdToLocksMap.isEmpty()) {
     		return;
     	}
-        for (RWLock rwLock: lockManager.tIdToLocksMap.get(tid)) {
+        for (RWLock rwLock: lockManager.tIdToLocksMap.getOrDefault(tid, new CopyOnWriteArraySet<RWLock>())) {
         	for (PageId pageId: lockManager.pageToLockMap.keySet()) {
         		if (rwLock.equals(lockManager.pageToLockMap.get(pageId)) 
         				&& pagesMap.containsKey(pageId.hashCode())) {
@@ -281,7 +287,7 @@ public class BufferPool {
     	if (lockManager.tIdToLocksMap.isEmpty()) {
     		return;
     	}
-    	for (RWLock rwLock: lockManager.tIdToLocksMap.get(tid)) {
+    	for (RWLock rwLock: lockManager.tIdToLocksMap.getOrDefault(tid, new CopyOnWriteArraySet<RWLock>())) {
         	for (PageId pageId: lockManager.pageToLockMap.keySet()) {
         		if (rwLock.equals(lockManager.pageToLockMap.get(pageId)) 
         				&& pagesMap.containsKey(pageId.hashCode())) {
